@@ -66,8 +66,13 @@ else:
         return io.TextIOWrapper(fileobj, newline=None)
 
     # gzip requires a binary file
-    binary_stdin = sys.stdin.buffer
-    binary_stdout = sys.stdout.buffer
+    try:
+        binary_stdin = sys.stdin.buffer
+        binary_stdout = sys.stdout.buffer
+    except AttributeError:
+        # rescue here to allow using mmpdb in jupyter notebook or in nosetest (though you can use --nocapture there)
+        binary_stdin = None
+        binary_stdout = None
     
     # Lazy map is the default
     imap = map
