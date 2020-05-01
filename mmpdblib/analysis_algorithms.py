@@ -1078,7 +1078,9 @@ def make_transform(
             rows = dataset.find_rule_environments_for_transform(
                 permuted_variable_smiles_id, sorted(possible_envs), max_variable_size=max_variable_size, cursor=cursor)
 
-            to_weld.extend( (frag.constant_smiles, frag.variable_smiles, substructure_pat, row) for row in rows )
+            to_weld.extend( (frag.constant_smiles, frag.variable_smiles, substructure_pat, row, frag.attachment_order)
+                            for row in rows )
+
     
     if pool is None:
         results = _compat.imap(_weld_and_filter, to_weld)
@@ -1160,6 +1162,21 @@ def iter_transform_products(
             product_property_rules.append(property_rule)
 
         yield TransformProduct(product_smiles, product_property_rules)
+
+
+class PropertyRuleAndStructure:
+
+    def __init__(self, property_rule, variable_smiles, constant_smiles, attachment_order):
+        self.property_rule = property_rule
+        self.variable_smiles = variable_smiles
+        self.constant_smiles = constant_smiles
+        self.attachment_order = attachment_order
+
+    def __getattr__(self, item):
+        if hasattr(self.property_rule, item):
+            return getattr(self.property_rule , item)
+        else:
+            return getattr(self)
 
 
 class TransformResult(object):
