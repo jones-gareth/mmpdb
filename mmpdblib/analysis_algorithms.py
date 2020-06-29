@@ -954,7 +954,7 @@ def weld_fragments(frag1, frag2):
 
 
 def _weld_and_filter(item):
-    frag_constant_smiles, frag_variable_smiles, substructure_pat, row, attachment_order = item
+    frag_constant_smiles, frag_variable_smiles, substructure_pat, row = item
     rule_id, rule_environment_id, other_constant_smiles, is_reversed = row
     product_smiles, new_mol = weld_fragments(frag_constant_smiles, str(other_constant_smiles))
     if substructure_pat is not None:
@@ -967,7 +967,7 @@ def _weld_and_filter(item):
         passed_substructure_test = test_mol.HasSubstructMatch(substructure_pat)
     else:
         passed_substructure_test = True
-    return (frag_constant_smiles, frag_variable_smiles, row, product_smiles, passed_substructure_test, attachment_order)
+    return (frag_constant_smiles, frag_variable_smiles, row, product_smiles, passed_substructure_test)
 
 
 def make_transform(
@@ -1078,7 +1078,7 @@ def make_transform(
             rows = dataset.find_rule_environments_for_transform(
                 permuted_variable_smiles_id, sorted(possible_envs), max_variable_size=max_variable_size, cursor=cursor)
 
-            to_weld.extend( (frag.constant_smiles, frag.variable_smiles, substructure_pat, row, frag.attachment_order)
+            to_weld.extend( (frag.constant_smiles, frag.variable_smiles, substructure_pat, row)
                             for row in rows )
 
     
@@ -1090,7 +1090,7 @@ def make_transform(
         # Too large and only one process might be used for all of the welding.
         results = pool.imap(_weld_and_filter, to_weld, 20)
         
-    for frag_constant_smiles, frag_variable_smiles, row, product_smiles, passed_substructure_test, attachment_order in results:
+    for frag_constant_smiles, frag_variable_smiles, row, product_smiles, passed_substructure_test in results:
         rule_id, rule_environment_id, other_constant_smiles, is_reversed = row
         if not passed_substructure_test:
             explain("     Skip rule %d:  %r + %r -> %r; does not contain --substructure",
@@ -1099,7 +1099,7 @@ def make_transform(
             
             # How to get to product_smiles from variable_smiles using rule_environment_id
         product_rule_environment_table[product_smiles].add(
-            (rule_id, frag_variable_smiles, rule_environment_id, is_reversed, frag_constant_smiles, attachment_order))
+            (rule_id, frag_variable_smiles, rule_environment_id, is_reversed, frag_constant_smiles))
         explain("     Rule %d:  %r + %r -> %r",
                 rule_id, frag_constant_smiles, str(other_constant_smiles), product_smiles)
 
@@ -1135,8 +1135,9 @@ def iter_transform_products(
 
             # Figure out the rule environments
             property_rules = []
-            for (rule_id, variable_smiles, rule_environment_id, is_reversed, constant_smiles,
-                 attachment_order) in rule_environment_info:
+            variable_smiles = None
+            constant_smiles = None
+            for (rule_id, variable_smiles, rule_environment_id, is_reversed, constant_smiles) in rule_environment_info:
                 property_rule = dataset.get_property_rule(
                     property_name_id, rule_environment_id, is_reversed, cursor=cursor)
                 if property_rule is None:
@@ -1149,16 +1150,19 @@ def iter_transform_products(
                             property_rule.smirks, property_rule.rule_id, property_name,
                             rule_environment_id, property_rule.count, min_pairs)
                     continue
-                property_rules.append(PropertyRuleAndStructure(property_rule, variable_smiles, constant_smiles, attachment_order))
+                property_rules.append(PropertyRuleAndStructure(property_rule, variable_smiles, constant_smiles))
 
             if not property_rules:
                 explain("    No rules to select.")
+                # TODO make PropertyRuleAndStructure
                 property_rule = None
             else:
                 property_rule = rule_selection_function(property_rules, explain)
                 if property_rule is None:
                     explain("    No rule selected.")
-                    
+
+            if not property_rule:
+                property_rule = PropertyRuleAndStructure(None, variable_smiles, constant_smiles)
             product_property_rules.append(property_rule)
 
         yield TransformProduct(product_smiles, product_property_rules)
@@ -1166,15 +1170,14 @@ def iter_transform_products(
 
 class PropertyRuleAndStructure:
 
-    def __init__(self, property_rule, variable_smiles, constant_smiles, attachment_order):
+    def __init__(self, property_rule, variable_smiles, constant_smiles):
         self.property_rule = property_rule
         self.variable_smiles = variable_smiles
         self.constant_smiles = constant_smiles
-        self.attachment_order = attachment_order
 
     def __getattr__(self, item):
-        if hasattr(self.property_rule, item):
-            return getattr(self.property_rule , item)
+        if self.property_rule and hasattr(self.property_rule, item):
+            return getattr(self.property_rule, item)
         else:
             return getattr(self)
 
